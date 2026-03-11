@@ -317,7 +317,7 @@ def _sheet_fields() -> dict[str, set[str]]:
     if load_workbook is None:
         return {}
     root = Path(__file__).resolve().parents[2]
-    for p in [root / "数据获取" / "专家分析数据模板.xlsx", root / "专家分析数据模板.xlsx"]:
+    for p in [root / "data_fetching" / "专家分析数据模板.xlsx", root / "专家分析数据模板.xlsx"]:
         if not p.exists():
             continue
         try:
@@ -350,4 +350,3 @@ def filter_values_for_agent(values: dict[str, Any], agent_name: str | None) -> d
     if not allow:
         return dict(values)
     return {k: values.get(k) for k in allow}
-

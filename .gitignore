@@ -61,8 +61,10 @@ run_progress.log
 *_7masters_data.xlsx
 
 # Local crawler exports
-数据获取/*.xlsx
-!数据获取/专家分析数据模板.xlsx
+data_fetching/*.xlsx
+!data_fetching/专家分析数据模板.xlsx
+# Legacy Chinese folder name (local leftovers only)
+数据获取/
 
 # =========================
 # Databases
