@@ -1,22 +1,15 @@
+﻿import json
 import os
-import json
-from langchain_anthropic import ChatAnthropic
-from langchain_deepseek import ChatDeepSeek
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_groq import ChatGroq
-from langchain_xai import ChatXAI
-from langchain_openai import ChatOpenAI, AzureChatOpenAI
-from langchain_openai import ChatOpenAI
-from langchain_gigachat import GigaChat
-from langchain_ollama import ChatOllama
 from enum import Enum
-from pydantic import BaseModel
-from typing import Tuple, List
 from pathlib import Path
+from typing import List, Tuple
+
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel
 
 
 class ModelProvider(str, Enum):
-    """Enum for supported LLM providers"""
+    """Supported model providers (OpenAI-compatible endpoints)."""
 
     ALIBABA = "Alibaba"
     ANTHROPIC = "Anthropic"
@@ -31,90 +24,95 @@ class ModelProvider(str, Enum):
     GIGACHAT = "GigaChat"
     AZURE_OPENAI = "Azure OpenAI"
     XAI = "xAI"
+    QWEN = "Qwen"
+    GLM = "GLM"
+    MINIMAX = "MiniMax"
 
 
 class LLMModel(BaseModel):
-    """Represents an LLM model configuration"""
+    """Represents an LLM model configuration."""
 
     display_name: str
     model_name: str
     provider: ModelProvider
 
     def to_choice_tuple(self) -> Tuple[str, str, str]:
-        """Convert to format needed for questionary choices"""
         return (self.display_name, self.model_name, self.provider.value)
 
     def is_custom(self) -> bool:
-        """Check if the model is a Gemini model"""
         return self.model_name == "-"
 
     def has_json_mode(self) -> bool:
-        """Check if the model supports JSON mode"""
-        if self.is_deepseek() or self.is_gemini():
-            return False
-        # Only certain Ollama models support JSON mode
-        if self.is_ollama():
-            return "llama3" in self.model_name or "neural-chat" in self.model_name
-        # OpenRouter models generally support JSON mode
-        if self.provider == ModelProvider.OPENROUTER:
-            return True
-        return True
+        # Keep JSON mode enabled for OpenAI-compatible hosted models.
+        # Ollama compatibility varies by model.
+        return not self.is_ollama()
 
     def is_deepseek(self) -> bool:
-        """Check if the model is a DeepSeek model"""
         return self.model_name.startswith("deepseek")
 
     def is_gemini(self) -> bool:
-        """Check if the model is a Gemini model"""
         return self.model_name.startswith("gemini")
 
     def is_ollama(self) -> bool:
-        """Check if the model is an Ollama model"""
         return self.provider == ModelProvider.OLLAMA
 
 
-# Load models from JSON file
+def _normalize_provider(provider: ModelProvider | str | None) -> ModelProvider:
+    if isinstance(provider, ModelProvider):
+        return provider
+
+    value = str(provider or "").strip()
+    if not value:
+        return ModelProvider.DEEPSEEK
+
+    for item in ModelProvider:
+        if value == item.value or value.lower() == item.value.lower() or value.upper().replace(" ", "_") == item.name:
+            return item
+
+    aliases = {
+        "tongyi": ModelProvider.QWEN,
+        "qwen": ModelProvider.QWEN,
+        "zhipu": ModelProvider.GLM,
+        "glm": ModelProvider.GLM,
+        "minimax": ModelProvider.MINIMAX,
+    }
+    return aliases.get(value.lower(), ModelProvider.DEEPSEEK)
+
+
 def load_models_from_json(json_path: str) -> List[LLMModel]:
-    """Load models from a JSON file"""
-    with open(json_path, 'r') as f:
+    """Load models from a JSON file."""
+    with open(json_path, "r", encoding="utf-8-sig") as f:
         models_data = json.load(f)
-    
-    models = []
+
+    models: List[LLMModel] = []
     for model_data in models_data:
-        # Convert string provider to ModelProvider enum
-        provider_enum = ModelProvider(model_data["provider"])
+        provider_enum = _normalize_provider(model_data.get("provider"))
         models.append(
             LLMModel(
                 display_name=model_data["display_name"],
                 model_name=model_data["model_name"],
-                provider=provider_enum
+                provider=provider_enum,
             )
         )
     return models
 
 
-# Get the path to the JSON files
 current_dir = Path(__file__).parent
 models_json_path = current_dir / "api_models.json"
 ollama_models_json_path = current_dir / "ollama_models.json"
 
-# Load available models from JSON
 AVAILABLE_MODELS = load_models_from_json(str(models_json_path))
-
-# Load Ollama models from JSON
 OLLAMA_MODELS = load_models_from_json(str(ollama_models_json_path))
 
-# Create LLM_ORDER in the format expected by the UI
 LLM_ORDER = [model.to_choice_tuple() for model in AVAILABLE_MODELS]
-
-# Create Ollama LLM_ORDER separately
 OLLAMA_LLM_ORDER = [model.to_choice_tuple() for model in OLLAMA_MODELS]
 
 
-def get_model_info(model_name: str, model_provider: str) -> LLMModel | None:
-    """Get model information by model_name"""
+def get_model_info(model_name: str, model_provider: str | ModelProvider) -> LLMModel | None:
+    """Get model information by model_name/provider pair."""
+    provider = _normalize_provider(model_provider)
     all_models = AVAILABLE_MODELS + OLLAMA_MODELS
-    return next((model for model in all_models if model.model_name == model_name and model.provider == model_provider), None)
+    return next((model for model in all_models if model.model_name == model_name and model.provider == provider), None)
 
 
 def find_model_by_name(model_name: str) -> LLMModel | None:
@@ -129,110 +127,82 @@ def get_models_list():
         {
             "display_name": model.display_name,
             "model_name": model.model_name,
-            "provider": model.provider.value
+            "provider": model.provider.value,
         }
         for model in AVAILABLE_MODELS
     ]
 
 
-def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = None) -> ChatOpenAI | ChatGroq | ChatOllama | GigaChat | None:
-    if model_provider == ModelProvider.GROQ:
-        api_key = (api_keys or {}).get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
-        if not api_key:
-            # Print error to console
-            print(f"API Key Error: Please make sure GROQ_API_KEY is set in your .env file or provided via API keys.")
-            raise ValueError("Groq API key not found.  Please make sure GROQ_API_KEY is set in your .env file or provided via API keys.")
-        return ChatGroq(model=model_name, api_key=api_key)
-    elif model_provider == ModelProvider.OPENAI:
-        # Get and validate API key
-        api_key = (api_keys or {}).get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
-        base_url = os.getenv("OPENAI_API_BASE")
-        if not api_key:
-            # Print error to console
-            print(f"API Key Error: Please make sure OPENAI_API_KEY is set in your .env file or provided via API keys.")
-            raise ValueError("OpenAI API key not found.  Please make sure OPENAI_API_KEY is set in your .env file or provided via API keys.")
-        return ChatOpenAI(model=model_name, api_key=api_key, base_url=base_url)
-    elif model_provider == ModelProvider.ANTHROPIC:
-        api_key = (api_keys or {}).get("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            print(f"API Key Error: Please make sure ANTHROPIC_API_KEY is set in your .env file or provided via API keys.")
-            raise ValueError("Anthropic API key not found.  Please make sure ANTHROPIC_API_KEY is set in your .env file or provided via API keys.")
-        return ChatAnthropic(model=model_name, api_key=api_key)
-    elif model_provider == ModelProvider.DEEPSEEK:
-        api_key = (api_keys or {}).get("DEEPSEEK_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
-        if not api_key:
-            print(f"API Key Error: Please make sure DEEPSEEK_API_KEY is set in your .env file or provided via API keys.")
-            raise ValueError("DeepSeek API key not found.  Please make sure DEEPSEEK_API_KEY is set in your .env file or provided via API keys.")
-        return ChatDeepSeek(model=model_name, api_key=api_key)
-    elif model_provider == ModelProvider.GOOGLE:
-        api_key = (api_keys or {}).get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            print(f"API Key Error: Please make sure GOOGLE_API_KEY is set in your .env file or provided via API keys.")
-            raise ValueError("Google API key not found.  Please make sure GOOGLE_API_KEY is set in your .env file or provided via API keys.")
-        return ChatGoogleGenerativeAI(model=model_name, api_key=api_key)
-    elif model_provider == ModelProvider.OLLAMA:
-        # For Ollama, we use a base URL instead of an API key
-        # Check if OLLAMA_HOST is set (for Docker on macOS)
-        ollama_host = os.getenv("OLLAMA_HOST", "localhost")
-        base_url = os.getenv("OLLAMA_BASE_URL", f"http://{ollama_host}:11434")
-        return ChatOllama(
-            model=model_name,
-            base_url=base_url,
-        )
-    elif model_provider == ModelProvider.OPENROUTER:
-        api_key = (api_keys or {}).get("OPENROUTER_API_KEY") or os.getenv("OPENROUTER_API_KEY")
-        if not api_key:
-            print(f"API Key Error: Please make sure OPENROUTER_API_KEY is set in your .env file or provided via API keys.")
-            raise ValueError("OpenRouter API key not found. Please make sure OPENROUTER_API_KEY is set in your .env file or provided via API keys.")
-        
-        # Get optional site URL and name for headers
-        site_url = os.getenv("YOUR_SITE_URL", "https://github.com/virattt/ai-hedge-fund")
-        site_name = os.getenv("YOUR_SITE_NAME", "AI Hedge Fund")
-        
-        return ChatOpenAI(
-            model=model_name,
-            openai_api_key=api_key,
-            openai_api_base="https://openrouter.ai/api/v1",
-            model_kwargs={
-                "extra_headers": {
-                    "HTTP-Referer": site_url,
-                    "X-Title": site_name,
-                }
-            }
-        )
-    elif model_provider == ModelProvider.XAI:
-        api_key = (api_keys or {}).get("XAI_API_KEY") or os.getenv("XAI_API_KEY")
-        if not api_key:
-            print(f"API Key Error: Please make sure XAI_API_KEY is set in your .env file or provided via API keys.")
-            raise ValueError("xAI API key not found. Please make sure XAI_API_KEY is set in your .env file or provided via API keys.")
-        return ChatXAI(model=model_name, api_key=api_key)
-    elif model_provider == ModelProvider.GIGACHAT:
-        if os.getenv("GIGACHAT_USER") or os.getenv("GIGACHAT_PASSWORD"):
-            return GigaChat(model=model_name)
-        else: 
-            api_key = (api_keys or {}).get("GIGACHAT_API_KEY") or os.getenv("GIGACHAT_API_KEY") or os.getenv("GIGACHAT_CREDENTIALS")
-            if not api_key:
-                print("API Key Error: Please make sure api_keys is set in your .env file or provided via API keys.")
-                raise ValueError("GigaChat API key not found. Please make sure GIGACHAT_API_KEY is set in your .env file or provided via API keys.")
+_AGENT_MODEL_ROUTING: dict[str, tuple[str, ModelProvider]] = {
+    # Force all active agents to use DeepSeek via SiliconFlow.
+    "portfolio_manager": (os.getenv("DEEPSEEK_MODEL", "deepseek-ai/DeepSeek-V3"), ModelProvider.DEEPSEEK),
+    "risk_management_agent": (os.getenv("DEEPSEEK_MODEL", "deepseek-ai/DeepSeek-V3"), ModelProvider.DEEPSEEK),
+    "warren_buffett_agent": (os.getenv("DEEPSEEK_MODEL", "deepseek-ai/DeepSeek-V3"), ModelProvider.DEEPSEEK),
+    "stanley_druckenmiller_agent": (os.getenv("DEEPSEEK_MODEL", "deepseek-ai/DeepSeek-V3"), ModelProvider.DEEPSEEK),
+    "fundamentals_analyst_agent": (os.getenv("DEEPSEEK_MODEL", "deepseek-ai/DeepSeek-V3"), ModelProvider.DEEPSEEK),
+    "growth_analyst_agent": (os.getenv("DEEPSEEK_MODEL", "deepseek-ai/DeepSeek-V3"), ModelProvider.DEEPSEEK),
+    "peter_lynch_agent": (os.getenv("DEEPSEEK_MODEL", "deepseek-ai/DeepSeek-V3"), ModelProvider.DEEPSEEK),
+    "charlie_munger_agent": (os.getenv("DEEPSEEK_MODEL", "deepseek-ai/DeepSeek-V3"), ModelProvider.DEEPSEEK),
+    "soros_agent": (os.getenv("DEEPSEEK_MODEL", "deepseek-ai/DeepSeek-V3"), ModelProvider.DEEPSEEK),
+}
 
-            return GigaChat(credentials=api_key, model=model_name)
-    elif model_provider == ModelProvider.AZURE_OPENAI:
-        # Get and validate API key
-        api_key = os.getenv("AZURE_OPENAI_API_KEY")
-        if not api_key:
-            # Print error to console
-            print(f"API Key Error: Please make sure AZURE_OPENAI_API_KEY is set in your .env file.")
-            raise ValueError("Azure OpenAI API key not found.  Please make sure AZURE_OPENAI_API_KEY is set in your .env file.")
-        # Get and validate Azure Endpoint
-        azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        if not azure_endpoint:
-            # Print error to console
-            print(f"Azure Endpoint Error: Please make sure AZURE_OPENAI_ENDPOINT is set in your .env file.")
-            raise ValueError("Azure OpenAI endpoint not found.  Please make sure AZURE_OPENAI_ENDPOINT is set in your .env file.")
-        # get and validate deployment name
-        azure_deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
-        if not azure_deployment_name:
-            # Print error to console
-            print(f"Azure Deployment Name Error: Please make sure AZURE_OPENAI_DEPLOYMENT_NAME is set in your .env file.")
-            raise ValueError("Azure OpenAI deployment name not found.  Please make sure AZURE_OPENAI_DEPLOYMENT_NAME is set in your .env file.")
-        return AzureChatOpenAI(azure_endpoint=azure_endpoint, azure_deployment=azure_deployment_name, api_key=api_key, api_version="2024-10-21")
+
+def resolve_agent_model(agent_name: str) -> tuple[str, ModelProvider]:
+    """Resolve model config by agent role for A-share deployment."""
+    return _AGENT_MODEL_ROUTING.get(
+        agent_name,
+        (os.getenv("DEEPSEEK_MODEL", "deepseek-ai/DeepSeek-V3"), ModelProvider.DEEPSEEK),
+    )
+
+
+def _provider_runtime_config(provider: ModelProvider) -> tuple[str, str]:
+    """Return (base_url, api_key_env_name) for each provider."""
+    if provider == ModelProvider.DEEPSEEK:
+        return (os.getenv("DEEPSEEK_BASE_URL", "https://api.siliconflow.cn/v1"), "SILICONFLOW_API_KEY")
+    if provider == ModelProvider.QWEN:
+        return (
+            os.getenv("QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+            "QWEN_API_KEY",
+        )
+    if provider == ModelProvider.GLM:
+        return (os.getenv("GLM_BASE_URL", "https://open.bigmodel.cn/api/paas/v4"), "GLM_API_KEY")
+    if provider == ModelProvider.MINIMAX:
+        return (os.getenv("MINIMAX_BASE_URL", "https://api.minimax.chat/v1"), "MINIMAX_API_KEY")
+    if provider == ModelProvider.OLLAMA:
+        return (os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"), "OLLAMA_API_KEY")
+
+    # Compatibility fallback: keep OpenAI-compatible usage for any legacy provider.
+    return (os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1"), "OPENAI_API_KEY")
+
+
+def get_model(
+    model_name: str,
+    model_provider: ModelProvider | str,
+    api_keys: dict | None = None,
+) -> ChatOpenAI:
+    """Create a ChatOpenAI client for all providers via base_url/api_key routing."""
+    provider = _normalize_provider(model_provider)
+    base_url, api_key_env = _provider_runtime_config(provider)
+
+    api_key = (api_keys or {}).get(api_key_env) or os.getenv(api_key_env)
+    if provider == ModelProvider.DEEPSEEK and not api_key:
+        # Compatibility fallback: accept DEEPSEEK_API_KEY as alias.
+        api_key = (api_keys or {}).get("DEEPSEEK_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
+    if provider == ModelProvider.OLLAMA and not api_key:
+        api_key = "ollama"
+
+    if not api_key:
+        if provider == ModelProvider.DEEPSEEK:
+            raise ValueError(
+                "DeepSeek API key not found. Please set SILICONFLOW_API_KEY (or DEEPSEEK_API_KEY) in .env."
+            )
+        raise ValueError(
+            f"{provider.value} API key not found. Please set {api_key_env} in .env or pass it through request api_keys."
+        )
+
+    return ChatOpenAI(
+        model=model_name,
+        api_key=api_key,
+        base_url=base_url,
+        temperature=0,
+    )

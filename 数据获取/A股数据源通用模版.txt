@@ -1,0 +1,194 @@
+# A股专家分析数据源通用模板
+
+## 通用数据源规则
+
+### 股票代码转换规则
+- 上证股票：SH + 代码（如 603305 -> SH603305）
+- 深证股票：SZ + 代码（如 000001 -> SZ000001）
+- 科创板：SH + 代码（如 688578 -> SH688578）
+
+### 精简口径（推荐优先使用）
+
+#### 数据源URL（6个常用）
+| 用途 | URL |
+|------|-----|
+| 行情 | https://quote.eastmoney.com/{市场}代码.html |
+| 财务 | https://emweb.securities.eastmoney.com/pc_hsf10/pages/index.html?type=web&code={市场代码}&color=b#/cwfx |
+| 资金流向 | https://data.eastmoney.com/zjlx/代码.html |
+| 公告 | https://data.eastmoney.com/notices/stock/代码.html |
+| 高管交易 | https://data.eastmoney.com/executive/gdzjc/代码.html |
+| 北向资金 | https://data.eastmoney.com/hsgt/hsgtV2.html |
+
+#### 字段映射（11类）
+- 基础信息：stock_code, stock_name, exchange, board, industry
+- 行情数据：current_price, price_change, price_change_pct, price_open, price_high, price_low, price_close, volume, amount, turnover_rate, market_cap_total, circulating_market_cap, pe_ttm, pb
+- 财务数据：report_period, earnings_per_share, net_assets_per_share, return_on_equity, gross_margin, net_margin, operating_margin, debt_ratio, revenue, operating_income, gross_profit, net_income, net_income_deducted, cash_and_equivalents, total_assets, total_liabilities, current_assets, current_liabilities, shareholders_equity, intangible_assets, fixed_assets, construction_in_progress, rd_expenditure, short_term_borrowings, long_term_borrowings, bonds_payable, revenue_growth, net_income_growth, asset_turnover, inventory_turnover, receivables_turnover, current_ratio, quick_ratio, debt_to_equity
+- 现金流量表：free_cash_flow, capital_expenditure, depreciation_and_amortization
+- 股本数据：share_capital, circulating_shares, restricted_shares
+- 资金流向：main_force_net_inflow, super_large_net_inflow, large_net_inflow, medium_net_inflow, small_net_inflow
+- 北向资金：northbound_net_inflow_20d, northbound_holding_change_20d, northbound_holding_detail, northbound_top_trades
+- 新闻公告：company_news_title, company_news_publish_time, company_news_source
+- 高管交易：insider_transaction_type, insider_transaction_shares, insider_transaction_time
+- 分红融资：dividends_and_other_cash_distributions
+- 补充计算：intrinsic_value_estimate, free_cash_flow
+
+---
+
+## 数据字段与数据源映射
+
+### 1. 基础信息
+| 字段 | 字段名 | 数据源URL模板 |
+|------|--------|---------------|
+| 股票代码 | stock_code | {行情页} |
+| 股票名称 | stock_name | {行情页} |
+| 交易所 | exchange | {行情页} |
+| 板块 | board | {行情页} |
+| 行业 | industry | {行情页} |
+
+### 2. 行情数据
+| 字段 | 字段名 | 数据源URL模板 |
+|------|--------|---------------|
+| 最新价 | current_price | https://quote.eastmoney.com/{市场}代码.html |
+| 涨跌 | price_change | https://quote.eastmoney.com/{市场}代码.html |
+| 涨跌幅 | price_change_pct | https://quote.eastmoney.com/{市场}代码.html |
+| 开盘价 | price_open | https://quote.eastmoney.com/{市场}代码.html |
+| 最高价 | price_high | https://quote.eastmoney.com/{市场}代码.html |
+| 最低价 | price_low | https://quote.eastmoney.com/{市场}代码.html |
+| 收盘价 | price_close | https://quote.eastmoney.com/{市场}代码.html |
+| 成交量 | volume | https://quote.eastmoney.com/{市场}代码.html |
+| 成交额 | amount | https://quote.eastmoney.com/{市场}代码.html |
+| 换手率 | turnover_rate | https://quote.eastmoney.com/{市场}代码.html |
+| 总市值 | market_cap_total | https://quote.eastmoney.com/{市场}代码.html |
+| 流通市值 | circulating_market_cap | https://quote.eastmoney.com/{市场}代码.html |
+| 市盈率TTM | pe_ttm | https://quote.eastmoney.com/{市场}代码.html |
+| 市净率 | pb | https://quote.eastmoney.com/{市场}代码.html |
+
+### 3. 财务数据
+| 字段 | 字段名 | 数据源URL模板 |
+|------|--------|---------------|
+| 报告期 | report_period | {财务分析页} |
+| 基本每股收益 | earnings_per_share | https://emweb.securities.eastmoney.com/pc_hsf10/pages/index.html?type=web&code={市场代码}&color=b#/cwfx |
+| 每股净资产 | net_assets_per_share | 同上 |
+| 净资产收益率 | return_on_equity | 同上 |
+| 毛利率 | gross_margin | 同上 |
+| 净利率 | net_margin | 同上 |
+| 营业利润率 | operating_margin | 同上 |
+| 资产负债率 | debt_ratio | 同上 |
+| 营业总收入 | revenue | 同上 |
+| 营业利润 | operating_income | 同上 |
+| 毛利润 | gross_profit | 同上 |
+| 归属净利润 | net_income | 同上 |
+| 扣非净利润 | net_income_deducted | 同上 |
+| 货币资金 | cash_and_equivalents | 同上 |
+| 总资产 | total_assets | 同上 |
+| 负债合计 | total_liabilities | 同上 |
+| 流动资产 | current_assets | 同上 |
+| 流动负债 | current_liabilities | 同上 |
+| 股东权益 | shareholders_equity | 同上 |
+| 无形资产 | intangible_assets | 同上 |
+| 固定资产 | fixed_assets | 同上 |
+| 在建工程 | construction_in_progress | 同上 |
+| 开发支出 | rd_expenditure | 同上 |
+| 短期借款 | short_term_borrowings | 同上 |
+| 长期借款 | long_term_borrowings | 同上 |
+| 应付债券 | bonds_payable | 同上 |
+| 营业收入同比增长 | revenue_growth | 同上 |
+| 净利润同比增长 | net_income_growth | 同上 |
+| 总资产周转率 | asset_turnover | 同上 |
+| 存货周转率 | inventory_turnover | 同上 |
+| 应收账款周转率 | receivables_turnover | 同上 |
+| 流动比率 | current_ratio | 同上 |
+| 速动比率 | quick_ratio | 同上 |
+| 产权比率 | debt_to_equity | 同上 |
+| 有息负债 | total_debt | 计算：短期借款+长期借款+应付债券 |
+| EBIT | ebit | 营业利润+折旧摊销 |
+| EBITDA | ebitda | EBIT+折旧摊销 |
+| ROIC | return_on_invested_capital | EBIT/(股东权益+负债) |
+
+### 4. 股本数据
+| 字段 | 字段名 | 数据源URL模板 |
+|------|--------|---------------|
+| 总股本 | share_capital | https://quote.eastmoney.com/{市场}代码.html |
+| 流通股本 | circulating_shares | 同上 |
+| 限售股本 | restricted_shares | 同上 |
+
+### 5. 资金流向
+| 字段 | 字段名 | 数据源URL模板 |
+|------|--------|---------------|
+| 主力净流入 | main_force_net_inflow | https://data.eastmoney.com/zjlx/代码.html |
+| 超大单净流入 | super_large_net_inflow | 同上 |
+| 大单净流入 | large_net_inflow | 同上 |
+| 中单净流入 | medium_net_inflow | 同上 |
+| 小单净流入 | small_net_inflow | 同上 |
+
+### 6. 北向资金（仅沪股通/深股通股票）
+| 字段 | 字段名 | 数据源URL模板 |
+|------|--------|---------------|
+| 北向资金20日净流入 | northbound_net_inflow_20d | https://data.eastmoney.com/hsgt/hsgtV2/ggzj.html (需汇总计算) |
+| 北向持仓变动20日 | northbound_holding_change_20d | https://data.eastmoney.com/hsgt/hsgtV2/StockHdDetail/{代码}.html |
+| 北向持股详情 | northbound_holding_detail | https://data.eastmoney.com/hsgt/hsgtV2/StockHdDetail/{代码}.html |
+| 北向十大成交股 | northbound_top_trades | https://data.eastmoney.com/hsgt/hsgtV2/sdcjg.html |
+
+**查询步骤：**
+1. 访问 https://data.eastmoney.com/hsgt/hsgtV2/StockHdDetail/代码.html 查看持股详情
+2. 访问 https://data.eastmoney.com/hsgt/hsgtV2/ggzj.html 查看季度排行
+3. 20日数据需要手动汇总每日数据
+
+**注意：科创板股票（688开头）不在沪股通范围内，无北向资金数据**
+
+### 7. 新闻公告
+| 字段 | 字段名 | 数据源URL模板 |
+|------|--------|---------------|
+| 公司新闻标题 | company_news_title | https://data.eastmoney.com/notices/stock/代码.html |
+| 新闻发布时间 | company_news_publish_time | 同上 |
+| 新闻来源 | company_news_source | 同上 |
+| 政策信号 | policy_signal | 综合分析公告内容 |
+
+### 8. 高管/股东交易
+| 字段 | 字段名 | 数据源URL模板 |
+|------|--------|---------------|
+| 内幕交易类型 | insider_transaction_type | https://data.eastmoney.com/executive/gdzjc/代码.html |
+| 内幕交易股数 | insider_transaction_shares | 同上 |
+| 交易时间 | insider_transaction_time | 同上 |
+
+### 9. 补充计算字段
+| 字段 | 计算方式 |
+|------|----------|
+| 内在价值估算 | 每股净资产 * 1.5 |
+| 现金分红 | 年报分红公告 |
+| 股权回购 | 年报/公告 |
+| PEG | 市盈率 / 利润增速 |
+| 自由现金流 | 经营现金流 - 资本开支 |
+
+---
+
+## 常用数据源URL
+
+| 用途 | URL |
+|------|-----|
+| 行情 | https://quote.eastmoney.com/sh603305.html |
+| 财务 | https://emweb.securities.eastmoney.com/pc_hsf10/pages/index.html?type=web&code=SH603305&color=b#/cwfx |
+| 资金流向 | https://data.eastmoney.com/zjlx/603305.html |
+| 公告 | https://data.eastmoney.com/notices/stock/603305.html |
+| 高管交易 | https://data.eastmoney.com/executive/gdzjc/603305.html |
+| 北向资金 | https://data.eastmoney.com/hsgt/hsgtV2.html |
+
+---
+
+## 已验证股票数据源
+
+### 688578 艾力斯（科创板）
+- 行情：https://quote.eastmoney.com/sh688578.html
+- 财务：https://emweb.securities.eastmoney.com/pc_hsf10/pages/index.html?type=web&code=SH688578&color=b#/cwfx
+- 资金：https://data.eastmoney.com/zjlx/688578.html
+- 公告：https://data.eastmoney.com/notices/stock/688578.html
+- 高管交易：https://data.eastmoney.com/executive/gdzjc/688578.html
+- 北向资金：不适用（科创板无沪股通）
+
+### 603305 旭升集团（沪主板）
+- 行情：https://quote.eastmoney.com/sh603305.html
+- 财务：https://emweb.securities.eastmoney.com/pc_hsf10/pages/index.html?type=web&code=SH603305&color=b#/cwfx
+- 资金：https://data.eastmoney.com/zjlx/603305.html
+- 公告：https://data.eastmoney.com/notices/stock/603305.html
+- 高管交易：https://data.eastmoney.com/executive/gdzjc/603305.html
+- 北向资金：https://data.eastmoney.com/hsgt/hsgtV2.html

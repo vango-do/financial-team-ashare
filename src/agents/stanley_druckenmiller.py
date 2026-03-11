@@ -37,13 +37,20 @@ def stanley_druckenmiller_agent(state: AgentState, agent_id: str = "stanley_druc
     start_date = data["start_date"]
     end_date = data["end_date"]
     tickers = data["tickers"]
-    api_key = get_api_key_from_state(state, "FINANCIAL_DATASETS_API_KEY")
+    api_key = get_api_key_from_state(state, "AKSHARE_API_KEY")
     analysis_data = {}
     druck_analysis = {}
 
     for ticker in tickers:
         progress.update_status(agent_id, ticker, "Fetching financial metrics")
-        metrics = get_financial_metrics(ticker, end_date, period="annual", limit=5, api_key=api_key)
+        metrics = get_financial_metrics(
+            ticker,
+            end_date,
+            period="annual",
+            limit=5,
+            api_key=api_key,
+            agent_name=agent_id,
+        )
 
         progress.update_status(agent_id, ticker, "Gathering financial line items")
         # Include relevant line items for Stan Druckenmiller's approach:
@@ -73,19 +80,26 @@ def stanley_druckenmiller_agent(state: AgentState, agent_id: str = "stanley_druc
             period="annual",
             limit=5,
             api_key=api_key,
+            agent_name=agent_id,
         )
 
         progress.update_status(agent_id, ticker, "Getting market cap")
-        market_cap = get_market_cap(ticker, end_date, api_key=api_key)
+        market_cap = get_market_cap(ticker, end_date, api_key=api_key, agent_name=agent_id)
 
         progress.update_status(agent_id, ticker, "Fetching insider trades")
-        insider_trades = get_insider_trades(ticker, end_date, limit=50, api_key=api_key)
+        insider_trades = get_insider_trades(ticker, end_date, limit=50, api_key=api_key, agent_name=agent_id)
 
         progress.update_status(agent_id, ticker, "Fetching company news")
-        company_news = get_company_news(ticker, end_date, limit=50, api_key=api_key)
+        company_news = get_company_news(ticker, end_date, limit=50, api_key=api_key, agent_name=agent_id)
 
         progress.update_status(agent_id, ticker, "Fetching recent price data for momentum")
-        prices = get_prices(ticker, start_date=start_date, end_date=end_date, api_key=api_key)
+        prices = get_prices(
+            ticker,
+            start_date=start_date,
+            end_date=end_date,
+            api_key=api_key,
+            agent_name=agent_id,
+        )
 
         progress.update_status(agent_id, ticker, "Analyzing growth & momentum")
         growth_momentum_analysis = analyze_growth_and_momentum(financial_line_items, prices)
@@ -151,7 +165,7 @@ def stanley_druckenmiller_agent(state: AgentState, agent_id: str = "stanley_druc
         progress.update_status(agent_id, ticker, "Done", analysis=druck_output.reasoning)
 
     # Wrap results in a single message
-    message = HumanMessage(content=json.dumps(druck_analysis), name=agent_id)
+    message = HumanMessage(content=json.dumps(druck_analysis, ensure_ascii=False, indent=2), name=agent_id)
 
     if state["metadata"].get("show_reasoning"):
         show_agent_reasoning(druck_analysis, "Stanley Druckenmiller Agent")
@@ -539,58 +553,38 @@ def generate_druckenmiller_output(
         [
             (
               "system",
-              """You are a Stanley Druckenmiller AI agent, making investment decisions using his principles:
-            
-              1. Seek asymmetric risk-reward opportunities (large upside, limited downside).
-              2. Emphasize growth, momentum, and market sentiment.
-              3. Preserve capital by avoiding major drawdowns.
-              4. Willing to pay higher valuations for true growth leaders.
-              5. Be aggressive when conviction is high.
-              6. Cut losses quickly if the thesis changes.
-                            
-              Rules:
-              - Reward companies showing strong revenue/earnings growth and positive stock momentum.
-              - Evaluate sentiment and insider activity as supportive or contradictory signals.
-              - Watch out for high leverage or extreme volatility that threatens capital.
-              - Output a JSON object with signal, confidence, and a reasoning string.
-              
-              When providing your reasoning, be thorough and specific by:
-              1. Explaining the growth and momentum metrics that most influenced your decision
-              2. Highlighting the risk-reward profile with specific numerical evidence
-              3. Discussing market sentiment and catalysts that could drive price action
-              4. Addressing both upside potential and downside risks
-              5. Providing specific valuation context relative to growth prospects
-              6. Using Stanley Druckenmiller's decisive, momentum-focused, and conviction-driven voice
-              
-              For example, if bullish: "The company shows exceptional momentum with revenue accelerating from 22% to 35% YoY and the stock up 28% over the past three months. Risk-reward is highly asymmetric with 70% upside potential based on FCF multiple expansion and only 15% downside risk given the strong balance sheet with 3x cash-to-debt. Insider buying and positive market sentiment provide additional tailwinds..."
-              For example, if bearish: "Despite recent stock momentum, revenue growth has decelerated from 30% to 12% YoY, and operating margins are contracting. The risk-reward proposition is unfavorable with limited 10% upside potential against 40% downside risk. The competitive landscape is intensifying, and insider selling suggests waning confidence. I'm seeing better opportunities elsewhere with more favorable setups..."
-              """,
+              """你是斯坦利·德鲁肯米勒风格分析师。
+              核心原则：追求非对称赔率、重视增长与动量、优先控制回撤、趋势反转要快速纠错。
+              输出要求：
+              1) 只基于输入数据，不得编造；
+              2) 用中文给出结论与依据，强调风险收益比；
+              3) 返回 JSON，字段为 signal/confidence/reasoning。""",
             ),
             (
               "human",
-              """Based on the following analysis, create a Druckenmiller-style investment signal.
-
-              Analysis Data for {ticker}:
+              """请基于以下数据输出德鲁肯米勒风格交易信号。
+              代码：{ticker}
+              分析数据：
               {analysis_data}
 
-              Return the trading signal in this JSON format:
+              严格返回以下 JSON：
               {{
                 "signal": "bullish/bearish/neutral",
                 "confidence": float (0-100),
-                "reasoning": "string"
+                "reasoning": "中文依据"
               }}
               """,
             ),
         ]
     )
 
-    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, indent=2), "ticker": ticker})
+    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, ensure_ascii=False, indent=2), "ticker": ticker})
 
     def create_default_signal():
         return StanleyDruckenmillerSignal(
             signal="neutral",
             confidence=0.0,
-            reasoning="Error in analysis, defaulting to neutral"
+            reasoning="证据不足，默认中性"
         )
 
     return call_llm(

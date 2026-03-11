@@ -1,338 +1,185 @@
 from __future__ import annotations
 
-"""Growth Agent
-
-Implements a growth-focused valuation methodology.
-"""
+"""Growth Agent."""
 
 import json
-import statistics
+
 from langchain_core.messages import HumanMessage
+from langchain_core.prompts import ChatPromptTemplate
+from pydantic import BaseModel, Field
+from typing_extensions import Literal
+
 from src.graph.state import AgentState, show_agent_reasoning
-from src.utils.progress import progress
+from src.tools.api import get_financial_metrics, get_insider_trades
 from src.utils.api_key import get_api_key_from_state
-from src.tools.api import (
-    get_financial_metrics,
-    get_insider_trades,
-)
+from src.utils.llm import call_llm
+from src.utils.progress import progress
+
+
+class GrowthLLMOutput(BaseModel):
+    signal: Literal["bullish", "bearish", "neutral"]
+    confidence: int = Field(description="0-100")
+    conclusion: str
+    basis: str
+    risk: str
+    trigger: str
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+def _latest_evidence_ids(state: AgentState, agent_id: str) -> list[str]:
+    logs = state.get("data", {}).get("retrieval_logs", [])
+    for row in reversed(logs):
+        if row.get("agent") == agent_id:
+            return list(row.get("hit_ids") or [])
+    return []
+
 
 def growth_analyst_agent(state: AgentState, agent_id: str = "growth_analyst_agent"):
-    """Run growth analysis across tickers and write signals back to `state`."""
-
+    """Run growth analysis and generate Chinese A-share signals."""
     data = state["data"]
     end_date = data["end_date"]
     tickers = data["tickers"]
-    api_key = get_api_key_from_state(state, "FINANCIAL_DATASETS_API_KEY")
+    api_key = get_api_key_from_state(state, "AKSHARE_API_KEY")
     growth_analysis: dict[str, dict] = {}
 
     for ticker in tickers:
-        progress.update_status(agent_id, ticker, "Fetching financial data")
-
-        # --- Historical financial metrics ---
+        progress.update_status(agent_id, ticker, "正在获取财务数据")
         financial_metrics = get_financial_metrics(
             ticker=ticker,
             end_date=end_date,
             period="ttm",
-            limit=12, # 3 years of ttm data
+            limit=12,
             api_key=api_key,
+            agent_name=agent_id,
         )
-        if not financial_metrics or len(financial_metrics) < 4:
-            progress.update_status(agent_id, ticker, "Failed: Not enough financial metrics")
+        if not financial_metrics or len(financial_metrics) < 3:
+            growth_analysis[ticker] = {
+                "signal": "neutral",
+                "confidence": 20,
+                "reasoning": {
+                    "conclusion": "证据不足",
+                    "basis": "成长数据样本不足（少于3期）",
+                    "risk": "样本太少会导致增长斜率失真",
+                    "trigger": "补齐历史财务后再评估",
+                    "evidence_ids": [],
+                },
+            }
+            progress.update_status(agent_id, ticker, "证据不足，已降级")
             continue
-        
-        most_recent_metrics = financial_metrics[0]
 
-        # --- Insider Trades ---
+        recent = financial_metrics[0]
+        previous = financial_metrics[1]
+        older = financial_metrics[2]
+
         insider_trades = get_insider_trades(
             ticker=ticker,
             end_date=end_date,
-            limit=1000,
-            api_key=api_key
+            limit=200,
+            api_key=api_key,
+            agent_name=agent_id,
+        )
+        insider_buy = sum(
+            1 for t in insider_trades if t.transaction_shares is not None and t.transaction_shares > 0
+        )
+        insider_sell = sum(
+            1 for t in insider_trades if t.transaction_shares is not None and t.transaction_shares < 0
         )
 
-        # ------------------------------------------------------------------
-        # Tool Implementation
-        # ------------------------------------------------------------------
-        
-        # 1. Historical Growth Analysis
-        growth_trends = analyze_growth_trends(financial_metrics)
-        
-        # 2. Growth-Oriented Valuation
-        valuation_metrics = analyze_valuation(most_recent_metrics)
-        
-        # 3. Margin Expansion Monitor
-        margin_trends = analyze_margin_trends(financial_metrics)
-        
-        # 4. Insider Conviction Tracker
-        insider_conviction = analyze_insider_conviction(insider_trades)
-        
-        # 5. Financial Health Check
-        financial_health = check_financial_health(most_recent_metrics)
-
-        # ------------------------------------------------------------------
-        # Aggregate & signal
-        # ------------------------------------------------------------------
-        scores = {
-            "growth": growth_trends['score'],
-            "valuation": valuation_metrics['score'],
-            "margins": margin_trends['score'],
-            "insider": insider_conviction['score'],
-            "health": financial_health['score']
-        }
-        
-        weights = {
-            "growth": 0.40,
-            "valuation": 0.25,
-            "margins": 0.15,
-            "insider": 0.10,
-            "health": 0.10
+        snapshot = {
+            "ticker": ticker,
+            "current_price": recent.current_price,
+            "intrinsic_value_estimate": recent.intrinsic_value_estimate,
+            "revenue_growth_t0": recent.revenue_growth,
+            "revenue_growth_t1": previous.revenue_growth,
+            "revenue_growth_t2": older.revenue_growth,
+            "earnings_growth_t0": recent.earnings_growth,
+            "earnings_growth_t1": previous.earnings_growth,
+            "earnings_growth_t2": older.earnings_growth,
+            "peg_ratio": recent.peg_ratio,
+            "pe_ttm": recent.price_to_earnings_ratio,
+            "pb": recent.price_to_book_ratio,
+            "gross_margin": recent.gross_margin,
+            "operating_margin": recent.operating_margin,
+            "debt_to_equity": recent.debt_to_equity,
+            "current_ratio": recent.current_ratio,
+            "insider_buy_count": insider_buy,
+            "insider_sell_count": insider_sell,
+            "a_share_context": {
+                "northbound_capital": "关注北向资金对成长赛道的持续性偏好",
+                "policy_guidance": "关注新质生产力、算力、半导体等政策催化",
+                "theme_and_hot_money": "题材拥挤时防范一致性反转",
+            },
         }
 
-        weighted_score = sum(scores[key] * weights[key] for key in scores)
-        
-        if weighted_score > 0.6:
-            signal = "bullish"
-        elif weighted_score < 0.4:
-            signal = "bearish"
-        else:
-            signal = "neutral"
-            
-        confidence = round(abs(weighted_score - 0.5) * 2 * 100)
+        progress.update_status(agent_id, ticker, "正在分析")
+        template = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "你是A股成长风格分析师。只允许依据输入数据给出结论，禁止编造。"
+                    "必须输出中文，并给出结论/依据/风险/触发条件/置信度/引用证据ID。",
+                ),
+                (
+                    "human",
+                    "请分析以下成长数据：\n{analysis_data}\n\n"
+                    "返回JSON：\n"
+                    "{{\n"
+                    '  "signal": "bullish" | "bearish" | "neutral",\n'
+                    '  "confidence": 0-100,\n'
+                    '  "conclusion": "一句话结论",\n'
+                    '  "basis": "成长依据（增速、估值、情绪）",\n'
+                    '  "risk": "主要风险",\n'
+                    '  "trigger": "触发条件",\n'
+                    '  "evidence_ids": ["证据ID"]\n'
+                    "}}",
+                ),
+            ]
+        )
+        prompt = template.invoke({"analysis_data": json.dumps(snapshot, ensure_ascii=False, indent=2)})
 
-        reasoning = {
-            "historical_growth": growth_trends,
-            "growth_valuation": valuation_metrics,
-            "margin_expansion": margin_trends,
-            "insider_conviction": insider_conviction,
-            "financial_health": financial_health,
-            "final_analysis": {
-                "signal": signal,
-                "confidence": confidence,
-                "weighted_score": round(weighted_score, 2)
-            }
-        }
+        def _default():
+            return GrowthLLMOutput(
+                signal="neutral",
+                confidence=35,
+                conclusion="证据不足",
+                basis="当前成长证据不足以给出高置信判断",
+                risk="赛道拥挤与估值波动风险并存",
+                trigger="业绩与订单增速再次确认后再行动",
+                evidence_ids=[],
+            )
+
+        llm_out = call_llm(
+            prompt=prompt,
+            pydantic_model=GrowthLLMOutput,
+            agent_name=agent_id,
+            state=state,
+            default_factory=_default,
+        )
+        evidence_ids = llm_out.evidence_ids or _latest_evidence_ids(state, agent_id)
 
         growth_analysis[ticker] = {
-            "signal": signal,
-            "confidence": confidence,
-            "reasoning": reasoning,
+            "signal": llm_out.signal,
+            "confidence": llm_out.confidence,
+            "reasoning": {
+                "conclusion": llm_out.conclusion,
+                "basis": llm_out.basis,
+                "risk": llm_out.risk,
+                "trigger": llm_out.trigger,
+                "evidence_ids": evidence_ids,
+                "metric_snapshot": snapshot,
+            },
         }
-        progress.update_status(agent_id, ticker, "Done", analysis=json.dumps(reasoning, indent=4))
+        progress.update_status(
+            agent_id,
+            ticker,
+            "已完成",
+            analysis=json.dumps(growth_analysis[ticker]["reasoning"], ensure_ascii=False, indent=2),
+        )
 
-    # ---- Emit message (for LLM tool chain) ----
-    msg = HumanMessage(content=json.dumps(growth_analysis), name=agent_id)
+    message = HumanMessage(content=json.dumps(growth_analysis, ensure_ascii=False, indent=2), name=agent_id)
     if state["metadata"].get("show_reasoning"):
-        show_agent_reasoning(growth_analysis, "Growth Analysis Agent")
+        show_agent_reasoning(growth_analysis, "成长风格分析师")
 
-    # Add the signal to the analyst_signals list
     state["data"]["analyst_signals"][agent_id] = growth_analysis
-
-    progress.update_status(agent_id, None, "Done")
-    
-    return {"messages": [msg], "data": data}
-
-#############################
-# Helper Functions
-#############################
-
-def _calculate_trend(data: list[float | None]) -> float:
-    """Calculates the slope of the trend line for the given data."""
-    clean_data = [d for d in data if d is not None]
-    if len(clean_data) < 2:
-        return 0.0
-    
-    y = clean_data
-    x = list(range(len(y)))
-    
-    try:
-        # Simple linear regression
-        sum_x = sum(x)
-        sum_y = sum(y)
-        sum_xy = sum(i * j for i, j in zip(x, y))
-        sum_x2 = sum(i**2 for i in x)
-        n = len(y)
-        
-        slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x**2)
-        return slope
-    except ZeroDivisionError:
-        return 0.0
-
-def analyze_growth_trends(metrics: list) -> dict:
-    """Analyzes historical growth trends."""
-    
-    rev_growth = [m.revenue_growth for m in metrics]
-    eps_growth = [m.earnings_per_share_growth for m in metrics]
-    fcf_growth = [m.free_cash_flow_growth for m in metrics]
-
-    rev_trend = _calculate_trend(rev_growth)
-    eps_trend = _calculate_trend(eps_growth)
-    fcf_trend = _calculate_trend(fcf_growth)
-
-    # Score based on recent growth and trend
-    score = 0
-    
-    # Revenue
-    if rev_growth[0] is not None:
-        if rev_growth[0] > 0.20:
-            score += 0.4
-        elif rev_growth[0] > 0.10:
-            score += 0.2
-        if rev_trend > 0:
-            score += 0.1 # Accelerating
-            
-    # EPS
-    if eps_growth[0] is not None:
-        if eps_growth[0] > 0.20:
-            score += 0.25
-        elif eps_growth[0] > 0.10:
-            score += 0.1
-        if eps_trend > 0:
-            score += 0.05
-    
-    # FCF
-    if fcf_growth[0] is not None:
-        if fcf_growth[0] > 0.15:
-            score += 0.1
-            
-    score = min(score, 1.0)
-
-    return {
-        "score": score,
-        "revenue_growth": rev_growth[0],
-        "revenue_trend": rev_trend,
-        "eps_growth": eps_growth[0],
-        "eps_trend": eps_trend,
-        "fcf_growth": fcf_growth[0],
-        "fcf_trend": fcf_trend
-    }
-
-def analyze_valuation(metrics) -> dict:
-    """Analyzes valuation from a growth perspective."""
-    
-    peg_ratio = metrics.peg_ratio
-    ps_ratio = metrics.price_to_sales_ratio
-    
-    score = 0
-    
-    # PEG Ratio
-    if peg_ratio is not None:
-        if peg_ratio < 1.0:
-            score += 0.5
-        elif peg_ratio < 2.0:
-            score += 0.25
-            
-    # Price to Sales Ratio
-    if ps_ratio is not None:
-        if ps_ratio < 2.0:
-            score += 0.5
-        elif ps_ratio < 5.0:
-            score += 0.25
-            
-    score = min(score, 1.0)
-    
-    return {
-        "score": score,
-        "peg_ratio": peg_ratio,
-        "price_to_sales_ratio": ps_ratio
-    }
-
-def analyze_margin_trends(metrics: list) -> dict:
-    """Analyzes historical margin trends."""
-    
-    gross_margins = [m.gross_margin for m in metrics]
-    operating_margins = [m.operating_margin for m in metrics]
-    net_margins = [m.net_margin for m in metrics]
-
-    gm_trend = _calculate_trend(gross_margins)
-    om_trend = _calculate_trend(operating_margins)
-    nm_trend = _calculate_trend(net_margins)
-    
-    score = 0
-    
-    # Gross Margin
-    if gross_margins[0] is not None:
-        if gross_margins[0] > 0.5: # Healthy margin
-            score += 0.2
-        if gm_trend > 0: # Expanding
-            score += 0.2
-
-    # Operating Margin
-    if operating_margins[0] is not None:
-        if operating_margins[0] > 0.15: # Healthy margin
-            score += 0.2
-        if om_trend > 0: # Expanding
-            score += 0.2
-            
-    # Net Margin Trend
-    if nm_trend > 0:
-        score += 0.2
-        
-    score = min(score, 1.0)
-    
-    return {
-        "score": score,
-        "gross_margin": gross_margins[0],
-        "gross_margin_trend": gm_trend,
-        "operating_margin": operating_margins[0],
-        "operating_margin_trend": om_trend,
-        "net_margin": net_margins[0],
-        "net_margin_trend": nm_trend
-    }
-
-def analyze_insider_conviction(trades: list) -> dict:
-    """Analyzes insider trading activity."""
-    
-    buys = sum(t.transaction_value for t in trades if t.transaction_value and t.transaction_shares > 0)
-    sells = sum(abs(t.transaction_value) for t in trades if t.transaction_value and t.transaction_shares < 0)
-    
-    if (buys + sells) == 0:
-        net_flow_ratio = 0
-    else:
-        net_flow_ratio = (buys - sells) / (buys + sells)
-    
-    score = 0
-    if net_flow_ratio > 0.5:
-        score = 1.0
-    elif net_flow_ratio > 0.1:
-        score = 0.7
-    elif net_flow_ratio > -0.1:
-        score = 0.5 # Neutral
-    else:
-        score = 0.2
-        
-    return {
-        "score": score,
-        "net_flow_ratio": net_flow_ratio,
-        "buys": buys,
-        "sells": sells
-    }
-
-def check_financial_health(metrics) -> dict:
-    """Checks the company's financial health."""
-    
-    debt_to_equity = metrics.debt_to_equity
-    current_ratio = metrics.current_ratio
-    
-    score = 1.0
-    
-    # Debt to Equity
-    if debt_to_equity is not None:
-        if debt_to_equity > 1.5:
-            score -= 0.5
-        elif debt_to_equity > 0.8:
-            score -= 0.2
-            
-    # Current Ratio
-    if current_ratio is not None:
-        if current_ratio < 1.0:
-            score -= 0.5
-        elif current_ratio < 1.5:
-            score -= 0.2
-            
-    score = max(score, 0.0)
-    
-    return {
-        "score": score,
-        "debt_to_equity": debt_to_equity,
-        "current_ratio": current_ratio
-    }
+    progress.update_status(agent_id, None, "已完成")
+    return {"messages": [message], "data": data}

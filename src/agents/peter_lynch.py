@@ -42,7 +42,7 @@ def peter_lynch_agent(state: AgentState, agent_id: str = "peter_lynch_agent"):
     data = state["data"]
     end_date = data["end_date"]
     tickers = data["tickers"]
-    api_key = get_api_key_from_state(state, "FINANCIAL_DATASETS_API_KEY")
+    api_key = get_api_key_from_state(state, "AKSHARE_API_KEY")
     analysis_data = {}
     lynch_analysis = {}
 
@@ -69,16 +69,17 @@ def peter_lynch_agent(state: AgentState, agent_id: str = "peter_lynch_agent"):
             period="annual",
             limit=5,
             api_key=api_key,
+            agent_name=agent_id,
         )
 
         progress.update_status(agent_id, ticker, "Getting market cap")
-        market_cap = get_market_cap(ticker, end_date, api_key=api_key)
+        market_cap = get_market_cap(ticker, end_date, api_key=api_key, agent_name=agent_id)
 
         progress.update_status(agent_id, ticker, "Fetching insider trades")
-        insider_trades = get_insider_trades(ticker, end_date, limit=50, api_key=api_key)
+        insider_trades = get_insider_trades(ticker, end_date, limit=50, api_key=api_key, agent_name=agent_id)
 
         progress.update_status(agent_id, ticker, "Fetching company news")
-        company_news = get_company_news(ticker, end_date, limit=50, api_key=api_key)
+        company_news = get_company_news(ticker, end_date, limit=50, api_key=api_key, agent_name=agent_id)
 
         # Perform sub-analyses:
         progress.update_status(agent_id, ticker, "Analyzing growth")
@@ -145,7 +146,7 @@ def peter_lynch_agent(state: AgentState, agent_id: str = "peter_lynch_agent"):
         progress.update_status(agent_id, ticker, "Done", analysis=lynch_output.reasoning)
 
     # Wrap up results
-    message = HumanMessage(content=json.dumps(lynch_analysis), name=agent_id)
+    message = HumanMessage(content=json.dumps(lynch_analysis, ensure_ascii=False, indent=2), name=agent_id)
 
     if state["metadata"].get("show_reasoning"):
         show_agent_reasoning(lynch_analysis, "Peter Lynch Agent")
@@ -451,51 +452,37 @@ def generate_lynch_output(
         [
             (
                 "system",
-                """You are a Peter Lynch AI agent. You make investment decisions based on Peter Lynch's well-known principles:
-                
-                1. Invest in What You Know: Emphasize understandable businesses, possibly discovered in everyday life.
-                2. Growth at a Reasonable Price (GARP): Rely on the PEG ratio as a prime metric.
-                3. Look for 'Ten-Baggers': Companies capable of growing earnings and share price substantially.
-                4. Steady Growth: Prefer consistent revenue/earnings expansion, less concern about short-term noise.
-                5. Avoid High Debt: Watch for dangerous leverage.
-                6. Management & Story: A good 'story' behind the stock, but not overhyped or too complex.
-                
-                When you provide your reasoning, do it in Peter Lynch's voice:
-                - Cite the PEG ratio
-                - Mention 'ten-bagger' potential if applicable
-                - Refer to personal or anecdotal observations (e.g., "If my kids love the product...")
-                - Use practical, folksy language
-                - Provide key positives and negatives
-                - Conclude with a clear stance (bullish, bearish, or neutral)
-                
-                Return your final output strictly in JSON with the fields:
+                """你是彼得·林奇风格分析师。
+                原则：买自己看得懂的公司、PEG估值优先、寻找长期十倍股、警惕高负债和伪成长。
+                请基于输入数据输出中文结论，禁止编造，保持简洁。
+                严格返回以下 JSON：
                 {{
                   "signal": "bullish" | "bearish" | "neutral",
                   "confidence": 0 to 100,
-                  "reasoning": "string"
+                  "reasoning": "中文依据"
                 }}
                 """,
             ),
             (
                 "human",
-                """Based on the following analysis data for {ticker}, produce your Peter Lynch–style investment signal.
-
-                Analysis Data:
+                """请基于以下数据输出彼得·林奇风格判断。
+                代码：{ticker}
+                分析数据：
                 {analysis_data}
 
-                Return only valid JSON with "signal", "confidence", and "reasoning".
+                仅返回合法 JSON，不要输出其它文本。
                 """,
             ),
         ]
     )
 
-    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, indent=2), "ticker": ticker})
+    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, ensure_ascii=False, indent=2), "ticker": ticker})
 
     def create_default_signal():
         return PeterLynchSignal(
             signal="neutral",
             confidence=0.0,
-            reasoning="Error in analysis; defaulting to neutral"
+            reasoning="证据不足，默认中性"
         )
 
     return call_llm(

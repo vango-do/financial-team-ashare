@@ -1,33 +1,82 @@
-# Python
+# =========================
+# Python / Poetry
+# =========================
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
 
-# Virtual Environment
+# Build artifacts
+build/
+dist/
+sdist/
+wheels/
+*.egg
+*.egg-info/
+.eggs/
+.installed.cfg
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
 venv/
 ENV/
+env/
 
-# Environment Variables
+# Poetry local config/cache
+poetry.toml
+
+# Test / lint / type caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# =========================
+# Environment / Secrets
+# =========================
 .env
+.env.local
+.env.*.local
 
-# IDE
+# =========================
+# Runtime outputs
+# =========================
+outputs/
+AgentLibrary/
+run_progress.log
+*.log
+*.tmp
+*.bak
+
+# Generated reports
+*_综合研报.md
+*_综合决策报告.md
+*_综合研报.docx
+*_综合决策报告.docx
+*_7masters_data.xlsx
+
+# Local crawler exports
+数据获取/*.xlsx
+!数据获取/专家分析数据模板.xlsx
+
+# =========================
+# Databases
+# =========================
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# =========================
+# IDE / Editor
+# =========================
 .idea/
 .vscode/
 *.swp
@@ -36,32 +85,16 @@ ENV/
 .cursorignore
 .cursorindexingignore
 
-# OS
+# =========================
+# OS files
+# =========================
 .DS_Store
 Thumbs.db
 
-# graph
-*.png
-
-# Txt files
-*.txt
-
-# PDF files
-*.pdf
-
+# =========================
 # Frontend
-node_modules
+# =========================
+node_modules/
 
-# Outputs
-outputs/
-
-# Database files (users will have their own local databases)
-*.db
-*.db-journal
-*.db-wal
-*.db-shm
-*.sqlite
-*.sqlite3
-
-# Alembic (keep migration files, but ignore generated/cache files)
+# Alembic cache
 app/backend/alembic/versions/__pycache__/

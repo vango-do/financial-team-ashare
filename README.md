@@ -1,158 +1,141 @@
-# AI Hedge Fund
+**免责声明：本项目仅用于研究与工程验证，不构成任何投资建议。**
 
-This is a proof of concept for an AI-powered hedge fund.  The goal of this project is to explore the use of AI to make trading decisions.  This project is for **educational** purposes only and is not intended for real trading or investment.
+# 金融团队（A股版）
 
-This system employs several agents working together:
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
+![Poetry](https://img.shields.io/badge/Dependency-Poetry-60A5FA?logo=poetry&logoColor=white)
 
-1. Aswath Damodaran Agent - The Dean of Valuation, focuses on story, numbers, and disciplined valuation
-2. Ben Graham Agent - The godfather of value investing, only buys hidden gems with a margin of safety
-3. Bill Ackman Agent - An activist investor, takes bold positions and pushes for change
-4. Cathie Wood Agent - The queen of growth investing, believes in the power of innovation and disruption
-5. Charlie Munger Agent - Warren Buffett's partner, only buys wonderful businesses at fair prices
-6. Michael Burry Agent - The Big Short contrarian who hunts for deep value
-7. Mohnish Pabrai Agent - The Dhandho investor, who looks for doubles at low risk
-8. Peter Lynch Agent - Practical investor who seeks "ten-baggers" in everyday businesses
-9. Phil Fisher Agent - Meticulous growth investor who uses deep "scuttlebutt" research 
-10. Rakesh Jhunjhunwala Agent - The Big Bull of India
-11. Stanley Druckenmiller Agent - Macro legend who hunts for asymmetric opportunities with growth potential
-12. Warren Buffett Agent - The oracle of Omaha, seeks wonderful companies at a fair price
-13. Valuation Agent - Calculates the intrinsic value of a stock and generates trading signals
-14. Sentiment Agent - Analyzes market sentiment and generates trading signals
-15. Fundamentals Agent - Analyzes fundamental data and generates trading signals
-16. Technicals Agent - Analyzes technical indicators and generates trading signals
-17. Risk Manager - Calculates risk metrics and sets position limits
-18. Portfolio Manager - Makes final trading decisions and generates orders
+`金融团队（A股版）` 是一个面向中国 A 股市场的多 Agent 投研决策系统，深度 fork 并改造自 [virattt/ai-hedge-fund](https://github.com/virattt/ai-hedge-fund)。
 
-<img width="1042" alt="Screenshot 2025-03-22 at 6 19 07 PM" src="https://github.com/user-attachments/assets/cbae3dcf-b571-490d-b0ad-3f0f035ac0d4" />
+## 致敬原作者与本地化改造
 
-Note: the system does not actually make any trades.
+感谢原作者提供的开源框架。本项目在其多 Agent 思路上完成了 A 股场景重构：
 
-[![Twitter Follow](https://img.shields.io/twitter/follow/virattt?style=social)](https://twitter.com/virattt)
+- 交易制度本地化：支持 A 股 `T+1` 与主板 `10%`、科创/创业板 `20%` 涨跌停规则。
+- 决策流程本地化：`7 位大师分析师 + 风险管理 + 组合经理` 的完整投研链路。
+- 证据机制本地化：`Retrieval-First`，每次 LLM 调用前强制先检索本地语料。
+- 风格污染防护：大师语料隔离、查询隔离、会话隔离，跨角色命中即丢弃并审计。
+- 执行规则固化：组合经理执行“严格多数票”，LLM 仅输出决策逻辑与理由。
 
-## Disclaimer
+## 核心能力与架构
 
-This project is for **educational and research purposes only**.
+### 多 Agent 主链路
 
-- Not intended for real trading or investment
-- No investment advice or guarantees provided
-- Creator assumes no liability for financial losses
-- Consult a financial advisor for investment decisions
-- Past performance does not indicate future results
+1. 输入股票代码和分析参数。
+2. 获取行情、财务、估值、新闻等结构化数据。
+3. 七位大师分别输出信号、置信度与证据。
+4. 风险管理模块施加仓位与执行边界。
+5. 组合经理按多数票给出最终动作。
+6. 自动导出中文综合研报（`.docx`）。
 
-By using this software, you agree to use it solely for learning purposes.
+### Retrieval-First（本地 RAG）
 
-## Table of Contents
-- [How to Install](#how-to-install)
-- [How to Run](#how-to-run)
-  - [⌨️ Command Line Interface](#️-command-line-interface)
-  - [🖥️ Web Application](#️-web-application)
-- [How to Contribute](#how-to-contribute)
-- [Feature Requests](#feature-requests)
-- [License](#license)
+- 每次 LLM 调用前必须先检索对应大师本地语料。
+- 检索结果会校验 `master` 身份，跨大师证据直接丢弃。
+- 证据不足时触发安全降级，明确输出“证据不足”，禁止编造。
 
-## How to Install
+### 策略引擎特色
 
-Before you can run the AI Hedge Fund, you'll need to install it and set up your API keys. These steps are common to both the full-stack web application and command line interface.
+- 每周集中反思：系统按周沉淀一轮策略反思与复盘。
+- 胜率优先：执行层优先保证决策胜率与稳定性。
+- 进化边界受控：策略进化仅限参数微调，并可叠加过滤条件，不做任意风格漂移。
 
-### 1. Clone the Repository
+## 技术边界与极端行情提示
+
+- 本系统不是交易撮合系统，无法保证真实成交。
+- 在极端行情（如千股涨停/跌停、连续一字板、临停）下，可能出现“建议可交易但实际无法成交”的偏差。
+- 当流动性恶化时，系统优先执行风控约束与安全降级逻辑。
+
+## 环境前置要求
+
+- Python `3.10+`（推荐 `3.11/3.12`；如遇上游轮子兼容问题，请先使用 `3.11`）
+- Poetry `>=1.8`
+- Git
+- 可访问模型服务与东方财富相关数据接口的网络环境
+
+可选依赖（仅动态爬取链路需要）：
+
+- 本地 `scrapling` 库路径（通过 `SCRAPLING_CN_LIB` 指向）
+
+## 快速开始
+
+### 1) 克隆与安装
 
 ```bash
-git clone https://github.com/virattt/ai-hedge-fund.git
-cd ai-hedge-fund
-```
-
-### 2. Set up API keys
-
-Create a `.env` file for your API keys:
-```bash
-# Create .env file for your API keys (in the root directory)
-cp .env.example .env
-```
-
-Open and edit the `.env` file to add your API keys:
-```bash
-# For running LLMs hosted by openai (gpt-4o, gpt-4o-mini, etc.)
-OPENAI_API_KEY=your-openai-api-key
-
-# For getting financial data to power the hedge fund
-FINANCIAL_DATASETS_API_KEY=your-financial-datasets-api-key
-```
-
-**Important**: You must set at least one LLM API key (e.g. `OPENAI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY`, or `DEEPSEEK_API_KEY`) for the hedge fund to work. 
-
-**Financial Data**: Data for AAPL, GOOGL, MSFT, NVDA, and TSLA is free and does not require an API key. For any other ticker, you will need to set the `FINANCIAL_DATASETS_API_KEY` in the .env file.
-
-## How to Run
-
-### ⌨️ Command Line Interface
-
-You can run the AI Hedge Fund directly via terminal. This approach offers more granular control and is useful for automation, scripting, and integration purposes.
-
-<img width="992" alt="Screenshot 2025-01-06 at 5 50 17 PM" src="https://github.com/user-attachments/assets/e8ca04bf-9989-4a7d-a8b4-34e04666663b" />
-
-#### Quick Start
-
-1. Install Poetry (if not already installed):
-```bash
-curl -sSL https://install.python-poetry.org | python3 -
-```
-
-2. Install dependencies:
-```bash
+git clone <your-repo-url>
+cd 金融团队
+pip install poetry
 poetry install
 ```
 
-#### Run the AI Hedge Fund
-```bash
-poetry run python src/main.py --ticker AAPL,MSFT,NVDA
-```
-
-You can also specify a `--ollama` flag to run the AI hedge fund using local LLMs.
+### 2) 配置环境变量
 
 ```bash
-poetry run python src/main.py --ticker AAPL,MSFT,NVDA --ollama
+cp .env.example .env
 ```
 
-You can optionally specify the start and end dates to make decisions over a specific time period.
+按需填写 `.env`：
+
+```env
+SILICONFLOW_API_KEY=your_api_key
+DEEPSEEK_API_KEY=your_api_key
+DEEPSEEK_BASE_URL=https://api.siliconflow.cn/v1
+DEEPSEEK_MODEL=deepseek-ai/DeepSeek-V3
+
+MASTER_LIBRARY_ROOT=./AgentLibrary
+MASTER_RAG_LOG_PATH=./outputs/retrieval_logs.jsonl
+MASTER_RAG_TOP_K=6
+MASTER_RAG_MIN_SCORE=0.03
+```
+
+### 3) 运行项目
+
+交互模式（程序会提示输入股票代码）：
 
 ```bash
-poetry run python src/main.py --ticker AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-03-01
+poetry run python src/main.py
 ```
 
-#### Run the Backtester
+非交互模式：
+
 ```bash
-poetry run python src/backtester.py --ticker AAPL,MSFT,NVDA
+poetry run python src/main.py --tickers 688578 --analysts-all --model deepseek-ai/DeepSeek-V3 --start-date 2025-01-01 --end-date 2026-03-11
 ```
 
-**Example Output:**
-<img width="941" alt="Screenshot 2025-01-06 at 5 47 52 PM" src="https://github.com/user-attachments/assets/00e794ea-8628-44e6-9a84-8f8a31ad3b47" />
+## 输出目录说明
 
+- 综合报告：`./outputs/YYYYMMDD_HHMM_综合决策报告.docx`
+- 桌面副本（可选）：`./outputs/{股票简称}_综合研报.docx`
+- 检索日志：`./outputs/retrieval_logs.jsonl`
 
-Note: The `--ollama`, `--start-date`, and `--end-date` flags work for the backtester, as well!
+## 项目结构（关键脚手架）
 
-### 🖥️ Web Application
+```text
+.
+├─ src/
+├─ tests/
+├─ 数据获取/
+├─ pyproject.toml
+├─ poetry.lock
+├─ .env.example
+├─ .gitignore
+├─ LICENSE
+└─ README.md
+```
 
-The new way to run the AI Hedge Fund is through our web application that provides a user-friendly interface. This is recommended for users who prefer visual interfaces over command line tools.
+## 安全与开源发布建议
 
-Please see detailed instructions on how to install and run the web application [here](https://github.com/virattt/ai-hedge-fund/tree/main/app).
+- 提交前检查 `.env`、API Key、Token、Cookie 是否泄露。
+- 不提交本地报告、缓存、日志、语料库数据。
+- 提交前使用 `git status` 和 `git diff` 二次确认变更。
+- 安全问题反馈流程见 `SECURITY.md`。
 
-<img width="1721" alt="Screenshot 2025-06-28 at 6 41 03 PM" src="https://github.com/user-attachments/assets/b95ab696-c9f4-416c-9ad1-51feb1f5374b" />
+## 许可协议
 
+本项目采用 MIT License（见 `LICENSE`），并致敬原项目 [virattt/ai-hedge-fund](https://github.com/virattt/ai-hedge-fund) 的开源贡献。
 
-## How to Contribute
+## 联系方式
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
-**Important**: Please keep your pull requests small and focused.  This will make it easier to review and merge.
-
-## Feature Requests
-
-If you have a feature request, please open an [issue](https://github.com/virattt/ai-hedge-fund/issues) and make sure it is tagged with `enhancement`.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+- GitHub Issues（推荐）
+- 邮箱：`juzhouq@gmail.com`

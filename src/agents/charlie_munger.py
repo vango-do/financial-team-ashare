@@ -23,13 +23,20 @@ def charlie_munger_agent(state: AgentState, agent_id: str = "charlie_munger_agen
     data = state["data"]
     end_date = data["end_date"]
     tickers = data["tickers"]
-    api_key = get_api_key_from_state(state, "FINANCIAL_DATASETS_API_KEY")
+    api_key = get_api_key_from_state(state, "AKSHARE_API_KEY")
     analysis_data = {}
     munger_analysis = {}
     
     for ticker in tickers:
         progress.update_status(agent_id, ticker, "Fetching financial metrics")
-        metrics = get_financial_metrics(ticker, end_date, period="annual", limit=10, api_key=api_key)  # Munger looks at longer periods
+        metrics = get_financial_metrics(
+            ticker,
+            end_date,
+            period="annual",
+            limit=10,
+            api_key=api_key,
+            agent_name=agent_id,
+        )  # Munger looks at longer periods
         
         progress.update_status(agent_id, ticker, "Gathering financial line items")
         financial_line_items = search_line_items(
@@ -54,10 +61,11 @@ def charlie_munger_agent(state: AgentState, agent_id: str = "charlie_munger_agen
             period="annual",
             limit=10,  # Munger examines long-term trends
             api_key=api_key,
+            agent_name=agent_id,
         )
         
         progress.update_status(agent_id, ticker, "Getting market cap")
-        market_cap = get_market_cap(ticker, end_date, api_key=api_key)
+        market_cap = get_market_cap(ticker, end_date, api_key=api_key, agent_name=agent_id)
         
         progress.update_status(agent_id, ticker, "Fetching insider trades")
         # Munger values management with skin in the game
@@ -66,6 +74,7 @@ def charlie_munger_agent(state: AgentState, agent_id: str = "charlie_munger_agen
             end_date,
             limit=100,
             api_key=api_key,
+            agent_name=agent_id,
         )
         
         progress.update_status(agent_id, ticker, "Fetching company news")
@@ -75,6 +84,7 @@ def charlie_munger_agent(state: AgentState, agent_id: str = "charlie_munger_agen
             end_date,
             limit=10,
             api_key=api_key,
+            agent_name=agent_id,
         )
         
         progress.update_status(agent_id, ticker, "Analyzing moat strength")
@@ -139,7 +149,7 @@ def charlie_munger_agent(state: AgentState, agent_id: str = "charlie_munger_agen
     
     # Wrap results in a single message for the chain
     message = HumanMessage(
-        content=json.dumps(munger_analysis),
+        content=json.dumps(munger_analysis, ensure_ascii=False, indent=2),
         name=agent_id
     )
     
@@ -823,29 +833,29 @@ def generate_munger_output(
     facts_bundle = make_munger_facts_bundle(analysis_data)
     template = ChatPromptTemplate.from_messages([
         ("system",
-         "You are Charlie Munger. Decide bullish, bearish, or neutral using only the facts. "
-         "Return JSON only. Keep reasoning under 120 characters. "
-         "Use the provided confidence exactly; do not change it."),
+         "你是查理·芒格风格分析师。仅基于事实判断看多/看空/中性。"
+         "只返回JSON，理由使用中文且不超过120字。"
+         "置信度必须使用给定值，不得修改。"),
         ("human",
-         "Ticker: {ticker}\n"
-         "Facts:\n{facts}\n"
-         "Confidence: {confidence}\n"
-         "Return exactly:\n"
+         "代码：{ticker}\n"
+         "事实：\n{facts}\n"
+         "置信度：{confidence}\n"
+         "严格返回：\n"
          "{{\n"  # escaped {
          '  "signal": "bullish" | "bearish" | "neutral",\n'
          f'  "confidence": {confidence_hint},\n'
-         '  "reasoning": "short justification"\n'
+         '  "reasoning": "中文依据"\n'
          "}}")  # escaped }
     ])
 
     prompt = template.invoke({
         "ticker": ticker,
-        "facts": json.dumps(facts_bundle, separators=(",", ":"), ensure_ascii=False),
+        "facts": json.dumps(facts_bundle, ensure_ascii=False, indent=2),
         "confidence": confidence_hint,
     })
 
     def _default():
-        return CharlieMungerSignal(signal="neutral", confidence=confidence_hint, reasoning="Insufficient data")
+        return CharlieMungerSignal(signal="neutral", confidence=confidence_hint, reasoning="证据不足，默认中性")
 
     return call_llm(
         prompt=prompt,

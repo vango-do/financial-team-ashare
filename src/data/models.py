@@ -59,6 +59,11 @@ class FinancialMetrics(BaseModel):
     earnings_per_share: float | None
     book_value_per_share: float | None
     free_cash_flow_per_share: float | None
+    current_price: float | None = None
+    dividend_yield: float | None = None
+    interest_bearing_debt: float | None = None
+    operating_liabilities: float | None = None
+    intrinsic_value_estimate: float | None = None
 
 
 class FinancialMetricsResponse(BaseModel):

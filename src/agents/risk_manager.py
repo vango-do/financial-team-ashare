@@ -13,7 +13,7 @@ def risk_management_agent(state: AgentState, agent_id: str = "risk_management_ag
     portfolio = state["data"]["portfolio"]
     data = state["data"]
     tickers = data["tickers"]
-    api_key = get_api_key_from_state(state, "FINANCIAL_DATASETS_API_KEY")
+    api_key = get_api_key_from_state(state, "AKSHARE_API_KEY")
     
     # Initialize risk analysis for each ticker
     risk_analysis = {}
@@ -32,6 +32,7 @@ def risk_management_agent(state: AgentState, agent_id: str = "risk_management_ag
             start_date=data["start_date"],
             end_date=data["end_date"],
             api_key=api_key,
+            agent_name=agent_id,
         )
 
         if not prices:
@@ -190,7 +191,8 @@ def risk_management_agent(state: AgentState, agent_id: str = "risk_management_ag
                 "position_limit": float(position_limit),
                 "remaining_limit": float(remaining_position_limit),
                 "available_cash": float(portfolio.get("cash", 0)),
-                "risk_adjustment": f"Volatility x Correlation adjusted: {combined_limit_pct:.1%} (base {vol_adjusted_limit_pct:.1%})"
+                "risk_adjustment": f"Volatility x Correlation adjusted: {combined_limit_pct:.1%} (base {vol_adjusted_limit_pct:.1%})",
+                "a_share_trade_rules": "A股执行T+1制度，当日买入不可当日卖出；需考虑主板10%与科创板/创业板20%涨跌停限制。",
             },
         }
         
@@ -203,7 +205,7 @@ def risk_management_agent(state: AgentState, agent_id: str = "risk_management_ag
     progress.update_status(agent_id, None, "Done")
 
     message = HumanMessage(
-        content=json.dumps(risk_analysis),
+        content=json.dumps(risk_analysis, ensure_ascii=False, indent=2),
         name=agent_id,
     )
 

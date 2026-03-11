@@ -1,8 +1,8 @@
 [tool.poetry]
-name = "ai-hedge-fund"
+name = "ai-hedge-fund-ashare"
 version = "1.0.0"
 description = "An AI-powered hedge fund that uses multiple agents to make trading decisions"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["juzhouq <juzhouq@gmail.com>"]
 readme = "README.md"
 packages = [
     { include = "src", from = "." },
@@ -10,7 +10,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = ">=3.10,<3.15"
 langchain = "^0.3.7"
 langchain-anthropic = "0.3.5"
 langchain-groq = "0.2.3"
@@ -19,7 +19,10 @@ langchain-deepseek = "^0.1.2"
 langchain-ollama = "0.3.6"
 langgraph = "0.2.56"
 pandas = "^2.1.0"
-numpy = "^1.24.0"
+numpy = [
+    { version = ">=1.26.4,<2.0", python = ">=3.10,<3.11" },
+    { version = "^2.3.0", python = ">=3.11,<3.15" }
+]
 python-dotenv = "1.0.0"
 matplotlib = "^3.9.2"
 tabulate = "^0.9.0"
@@ -27,6 +30,9 @@ colorama = "^0.4.6"
 questionary = "^2.1.0"
 rich = "^13.9.4"
 langchain-google-genai = "^2.0.11"
+requests = "^2.32.0"
+openpyxl = "^3.1.5"
+python-dateutil = "^2.9.0.post0"
 # Backend dependencies
 fastapi = {extras = ["standard"], version = "^0.104.0"}
 fastapi-cli = "^0.0.7"
@@ -36,6 +42,8 @@ sqlalchemy = "^2.0.22"
 alembic = "^1.12.0"
 langchain-gigachat = "^0.3.12"
 langchain-xai = "^0.2.5"
+akshare = "^1.18.37"
+python-docx = "^1.2.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"

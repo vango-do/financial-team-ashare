@@ -21,7 +21,7 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
     data = state["data"]
     end_date = data["end_date"]
     tickers = data["tickers"]
-    api_key = get_api_key_from_state(state, "FINANCIAL_DATASETS_API_KEY")
+    api_key = get_api_key_from_state(state, "AKSHARE_API_KEY")
     # Collect all analysis for LLM reasoning
     analysis_data = {}
     buffett_analysis = {}
@@ -29,7 +29,14 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
     for ticker in tickers:
         progress.update_status(agent_id, ticker, "Fetching financial metrics")
         # Fetch required data - request more periods for better trend analysis
-        metrics = get_financial_metrics(ticker, end_date, period="ttm", limit=10, api_key=api_key)
+        metrics = get_financial_metrics(
+            ticker,
+            end_date,
+            period="ttm",
+            limit=10,
+            api_key=api_key,
+            agent_name=agent_id,
+        )
 
         progress.update_status(agent_id, ticker, "Gathering financial line items")
         financial_line_items = search_line_items(
@@ -52,11 +59,12 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
             period="ttm",
             limit=10,
             api_key=api_key,
+            agent_name=agent_id,
         )
 
         progress.update_status(agent_id, ticker, "Getting market cap")
         # Get current market cap
-        market_cap = get_market_cap(ticker, end_date, api_key=api_key)
+        market_cap = get_market_cap(ticker, end_date, api_key=api_key, agent_name=agent_id)
 
         progress.update_status(agent_id, ticker, "Analyzing fundamentals")
         # Analyze fundamentals
@@ -139,7 +147,7 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
         progress.update_status(agent_id, ticker, "Done", analysis=buffett_output.reasoning)
 
     # Create the message
-    message = HumanMessage(content=json.dumps(buffett_analysis), name=agent_id)
+    message = HumanMessage(content=json.dumps(buffett_analysis, ensure_ascii=False, indent=2), name=agent_id)
 
     # Show reasoning if requested
     if state["metadata"]["show_reasoning"]:
@@ -770,52 +778,36 @@ def generate_buffett_output(
         [
             (
                 "system",
-                "You are Warren Buffett. Decide bullish, bearish, or neutral using only the provided facts.\n"
-                "\n"
-                "Checklist for decision:\n"
-                "- Circle of competence\n"
-                "- Competitive moat\n"
-                "- Management quality\n"
-                "- Financial strength\n"
-                "- Valuation vs intrinsic value\n"
-                "- Long-term prospects\n"
-                "\n"
-                "Signal rules:\n"
-                "- Bullish: strong business AND margin_of_safety > 0.\n"
-                "- Bearish: poor business OR clearly overvalued.\n"
-                "- Neutral: good business but margin_of_safety <= 0, or mixed evidence.\n"
-                "\n"
-                "Confidence scale:\n"
-                "- 90-100%: Exceptional business within my circle, trading at attractive price\n"
-                "- 70-89%: Good business with decent moat, fair valuation\n"
-                "- 50-69%: Mixed signals, would need more information or better price\n"
-                "- 30-49%: Outside my expertise or concerning fundamentals\n"
-                "- 10-29%: Poor business or significantly overvalued\n"
-                "\n"
-                "Keep reasoning under 120 characters. Do not invent data. Return JSON only."
+                "你是沃伦·巴菲特风格分析师。仅依据提供事实判断看多/看空/中性。\n"
+                "检查项：能力圈、护城河、管理层质量、财务稳健性、估值与内在价值、安全边际。\n"
+                "规则：\n"
+                "- 看多：商业质量高且安全边际为正。\n"
+                "- 看空：商业质量弱或明显高估。\n"
+                "- 中性：证据混合或安全边际不足。\n"
+                "禁止编造；推理控制在120字以内；仅输出JSON。"
             ),
             (
                 "human",
-                "Ticker: {ticker}\n"
-                "Facts:\n{facts}\n\n"
-                "Return exactly:\n"
+                "代码：{ticker}\n"
+                "事实：\n{facts}\n\n"
+                "严格返回：\n"
                 "{{\n"
                 '  "signal": "bullish" | "bearish" | "neutral",\n'
                 '  "confidence": int,\n'
-                '  "reasoning": "short justification"\n'
+                '  "reasoning": "简短中文依据"\n'
                 "}}"
             ),
         ]
     )
 
     prompt = template.invoke({
-        "facts": json.dumps(facts, separators=(",", ":"), ensure_ascii=False),
+        "facts": json.dumps(facts, ensure_ascii=False, indent=2),
         "ticker": ticker,
     })
 
     # Default fallback uses int confidence to match schema and avoid parse retries
     def create_default_warren_buffett_signal():
-        return WarrenBuffettSignal(signal="neutral", confidence=50, reasoning="Insufficient data")
+        return WarrenBuffettSignal(signal="neutral", confidence=50, reasoning="证据不足，默认中性")
 
     return call_llm(
         prompt=prompt,
