@@ -47,7 +47,6 @@ htmlcov/
 # Runtime outputs
 # =========================
 outputs/
-AgentLibrary/
 run_progress.log
 *.log
 *.tmp
